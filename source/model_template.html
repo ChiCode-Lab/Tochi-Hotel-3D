@@ -1,0 +1,831 @@
+<title>Tochi Hotel 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed WebGL scene; one floating control sheet (top-left on desktop, bottom on phones). */
+:root {
+  --sky: #cfe0ea;
+  --panel: rgba(251, 249, 244, 0.93);
+  --ink: #1f2226;
+  --muted: #5b636b;
+  --line: rgba(31, 34, 38, 0.14);
+  --accent: #8b5a3c;
+  --accent-ink: #ffffff;
+  --chip: rgba(31, 34, 38, 0.06);
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky: #1c252c; --panel: rgba(24, 27, 31, 0.9); --ink: #eef0f2; --muted: #a7aeb6;
+    --line: rgba(255, 255, 255, 0.14); --accent: #d49c6c; --accent-ink: #1b140f; --chip: rgba(255, 255, 255, 0.07);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --sky: #1c252c; --panel: rgba(24, 27, 31, 0.9); --ink: #eef0f2; --muted: #a7aeb6;
+  --line: rgba(255, 255, 255, 0.14); --accent: #d49c6c; --accent-ink: #1b140f; --chip: rgba(255, 255, 255, 0.07);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--sky); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+.panel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: max(16px, env(safe-area-inset-left, 0px));
+  width: min(340px, calc(100% - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  display: grid;
+  gap: 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+.panel h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.45rem;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.panel .sub { margin: 2px 0 0; color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
+.label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+button {
+  font: 500 0.86rem/1 var(--font-display);
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+.facts div { min-width: 0; }
+.facts b { display: block; font: 600 1.05rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.facts span { font-size: 0.72rem; color: var(--muted); }
+.hint { font-size: 0.74rem; color: var(--muted); margin: 0; }
+.toggle-panel { display: none; }
+#status[hidden] { display: none; }
+#status {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 600 1rem var(--font-display); letter-spacing: 0.06em; color: var(--muted);
+  pointer-events: none; text-align: center; padding: 24px;
+}
+@media (max-width: 640px) {
+  .panel {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    width: auto;
+    padding: 11px 12px 10px;
+    gap: 8px;
+  }
+  .panel h1 { font-size: 1.2rem; }
+  .facts, .hint, .panel .sub { display: none; }
+  .panel.open .facts { display: grid; }
+  .panel.open .hint, .panel.open .sub { display: block; }
+  .toggle-panel { display: inline-block; position: absolute; top: 9px; right: 10px; padding: 6px 9px; }
+  button { padding: 8px 10px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div id="stage" aria-label="3D model of Tochi Hotel"></div>
+<div id="status">Building the model…</div>
+
+<section class="panel" id="panel" aria-label="Model controls">
+  <div>
+    <h1>Tochi Hotel</h1>
+    <p class="sub">Concept 3D model from drawing TH-A-101 Rev P2. Single storey, black stone-coated hip roof over a white cornice parapet.</p>
+  </div>
+  <button class="toggle-panel" id="more" aria-expanded="false">Info</button>
+  <div>
+    <div class="label">Views</div>
+    <div class="row" id="views">
+      <button data-view="aerial" aria-pressed="true">Aerial</button>
+      <button data-view="front" aria-pressed="false">Front yard</button>
+      <button data-view="court" aria-pressed="false">Courtyard</button>
+      <button data-view="rear" aria-pressed="false">Rear</button>
+      <button data-view="plan" aria-pressed="false">Plan view</button>
+    </div>
+  </div>
+  <div>
+    <div class="label">Show</div>
+    <div class="row">
+      <button id="roofBtn" aria-pressed="true">Roof</button>
+      <button id="carBtn" aria-pressed="true">Cars</button>
+    </div>
+  </div>
+  <div class="facts">
+    <div><b>13</b><span>en-suite rooms</span></div>
+    <div><b>41.5 m</b><span>building length</span></div>
+    <div><b>6</b><span>parking bays</span></div>
+  </div>
+  <p class="hint">Drag to orbit · scroll or pinch to zoom · right-drag or two-finger drag to pan. Turn the roof off to see the room layout.</p>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const D = __DATA__;
+const S = D.site;
+const FFL = S.FFL;
+const statusEl = document.getElementById('status');
+
+try {
+// ---------------- renderer / scene ----------------
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(stage.clientWidth, stage.clientHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#bcd6e8');
+scene.fog = new THREE.Fog('#c3d8e6', 140, 380);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, stage.clientWidth / stage.clientHeight, 0.1, 900);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 2;
+controls.maxDistance = 190;
+
+// plan (x east, y north, z up) -> three (x, z, -y)
+const V3 = (x, y, z) => new THREE.Vector3(x, z, -y);
+const CX = S.PL / 2, CY = S.PW / 2;
+
+// ---------------- lights ----------------
+scene.add(new THREE.HemisphereLight('#e8f1f8', '#7d7563', 0.75));
+const sun = new THREE.DirectionalLight('#fff3df', 2.6);
+sun.position.copy(V3(CX - 38, CY - 26, 58));
+sun.target.position.copy(V3(CX, CY, 0));
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 40, bottom: -40, near: 1, far: 200 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+
+// ---------------- textures ----------------
+function canvasTex(size, draw, repeat = 1) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'); draw(g, size);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8; t.repeat.set(repeat, repeat);
+  return t;
+}
+function noise(g, s, base, amp, n = 9000) {
+  g.fillStyle = base; g.fillRect(0, 0, s, s);
+  for (let i = 0; i < n; i++) {
+    const v = (Math.random() - 0.5) * amp;
+    g.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${Math.abs(v)})`;
+    g.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+  }
+}
+const texPaving = canvasTex(256, (g, s) => {
+  g.fillStyle = '#6f6a63'; g.fillRect(0, 0, s, s);
+  const bw = s / 4, bh = s / 8;
+  for (let r = 0; r < 8; r++) for (let c = -1; c < 5; c++) {
+    const off = (r % 2) * bw / 2;
+    const tone = 150 + Math.floor(Math.random() * 22);
+    const red = (r + c) % 7 === 0;
+    g.fillStyle = red ? `rgb(${tone - 10},${tone - 52},${tone - 62})` : `rgb(${tone},${tone - 4},${tone - 10})`;
+    g.fillRect(c * bw + off + 2, r * bh + 2, bw - 4, bh - 4);
+  }
+}, 1 / 1.6);
+const texGrass = canvasTex(256, (g, s) => {
+  noise(g, s, '#6f8f45', 0.22, 14000);
+  for (let i = 0; i < 2500; i++) {
+    g.strokeStyle = `rgba(${40 + Math.random() * 40},${90 + Math.random() * 60},30,0.5)`;
+    const x = Math.random() * s, y = Math.random() * s;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.random() * 3 - 1.5, y - 4); g.stroke();
+  }
+}, 1 / 3);
+const texAsphalt = canvasTex(256, (g, s) => noise(g, s, '#3d3f42', 0.25, 16000), 1 / 4);
+const texEarth = canvasTex(256, (g, s) => noise(g, s, '#8a8f66', 0.18, 12000), 1 / 6);
+// stone-coated roof tiles (black): courses run along the eaves
+const texRoof = canvasTex(256, (g, s) => {
+  g.fillStyle = '#18191b'; g.fillRect(0, 0, s, s);
+  const rows = 8, rh = s / rows, tw = s / 6;
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * tw / 2;
+    for (let c = -1; c < 7; c++) {
+      const v = Math.random() * 14 - 7;
+      g.fillStyle = `rgb(${30 + v},${31 + v},${34 + v})`;
+      g.fillRect(c * tw + off + 1, r * rh + 1, tw - 2, rh - 3);
+      g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(c * tw + off + 1, r * rh + 1, tw - 2, 3);
+    }
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(0, r * rh + rh - 3, s, 3);
+  }
+  for (let i = 0; i < 5000; i++) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.25})`; g.fillRect(Math.random() * s, Math.random() * s, 1, 1); }
+});
+// charcoal brick cladding
+const texBrick = canvasTex(256, (g, s) => {
+  g.fillStyle = '#8c8a86'; g.fillRect(0, 0, s, s);
+  const rows = 12, rh = s / rows, bw = s / 3;
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * bw / 2;
+    for (let c = -1; c < 4; c++) {
+      const v = Math.random() * 18 - 9;
+      g.fillStyle = `rgb(${52 + v},${50 + v},${50 + v})`;
+      g.fillRect(c * bw + off + 2, r * rh + 2, bw - 4, rh - 4);
+    }
+  }
+}, 1 / 0.75);
+const texLouvre = canvasTex(64, (g, s) => {
+  g.fillStyle = '#5d6166'; g.fillRect(0, 0, s, s);
+  for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(0, i * s / 8, s, 2); }
+});
+const texPlinth = canvasTex(128, (g, s) => noise(g, s, '#a9a8a2', 0.3, 6000), 1);
+const texWall = canvasTex(256, (g, s) => noise(g, s, '#ffffff', 0.05, 7000), 1 / 2);
+
+// ---------------- materials ----------------
+const std = (color, rough = 0.85, metal = 0, extra = {}) =>
+  new THREE.MeshStandardMaterial(Object.assign({ color, roughness: rough, metalness: metal, envMapIntensity: 0.6 }, extra));
+const M = {
+  wall: std('#efede8', 0.92, 0, { map: texWall }),
+  band: std('#fbfbf9', 0.8),
+  sage: std('#a7ac97', 0.9, 0, { map: texWall }),
+  brick: std('#ffffff', 0.85, 0, { map: texBrick }),
+  parapet: std('#d9d8d2', 0.9),
+  coping: std('#55575a', 0.8),
+  inner: std('#f7f4ee', 0.95),
+  tile: std('#e8e2d7', 0.55),
+  plinth: std('#ffffff', 0.95, 0, { map: texPlinth }),
+  roof: std('#ffffff', 0.62, 0.15, { map: texRoof, side: THREE.DoubleSide }),
+  glass: std('#1f3a46', 0.08, 0.7, { transparent: true, opacity: 0.82, envMapIntensity: 1.2 }),
+  frame: std('#c9cdd2', 0.35, 0.75),
+  bars: std('#17191b', 0.5, 0.5),
+  mahog: std('#5b3423', 0.55),
+  wood: std('#b37b4c', 0.6),
+  pvc: std('#f2f1ee', 0.5),
+  louvre: std('#ffffff', 0.7, 0.2, { map: texLouvre }),
+  concrete: std('#c2bdb3', 0.95),
+  paving: std('#ffffff', 0.9, 0, { map: texPaving }),
+  grass: std('#ffffff', 1, 0, { map: texGrass }),
+  asphalt: std('#ffffff', 0.95, 0, { map: texAsphalt }),
+  earth: std('#ffffff', 1, 0, { map: texEarth }),
+  steel: std('#1b1d20', 0.45, 0.6),
+  paint: std('#f4f3ee', 0.7),
+  yellow: std('#d9b23a', 0.7),
+};
+const FUR = {
+  bed: std('#f4f2ec', 0.9), pillow: std('#ffffff', 0.9), headboard: std('#4f3324', 0.7), wood: std('#8a5a3a', 0.6),
+  tray: std('#dde5ea', 0.3), white: std('#fbfbfa', 0.3), bar: std('#3a2a21', 0.5), stool: std('#222428', 0.5),
+  chair: std('#6c4a33', 0.7), counter: std('#d6d0c4', 0.35), shelf: std('#9a8f80', 0.8),
+};
+
+// ---------------- geometry helpers ----------------
+function prism(pts, z0, z1) {
+  const sh = new THREE.Shape();
+  sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(z1 - z0, 0.001), bevelEnabled: false });
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, z0, 0);
+  return g;
+}
+// box aligned to plan direction angle phi (radians, plan), centred at plan (x,y), z centre
+function obox(len, h, w, x, y, zc, phi = 0) {
+  const g = new THREE.BoxGeometry(len, h, w);
+  if (phi) g.rotateY(phi);
+  g.translate(x, zc, -y);
+  return g;
+}
+const buckets = new Map();
+function put(mat, geo) {
+  if (!buckets.has(mat)) buckets.set(mat, []);
+  buckets.get(mat).push(geo.index ? geo.toNonIndexed() : geo);
+}
+function flush(group, { cast = true, receive = true } = {}) {
+  for (const [mat, geos] of buckets) {
+    geos.forEach(g => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); g.clearGroups(); });
+    const merged = mergeGeometries(geos, false);
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = cast; mesh.receiveShadow = receive;
+    group.add(mesh);
+  }
+  buckets.clear();
+}
+
+// ---------------- building ----------------
+const building = new THREE.Group(); scene.add(building);
+const roofGroup = new THREE.Group(); scene.add(roofGroup);
+const carGroup = new THREE.Group(); scene.add(carGroup);
+const siteGroup = new THREE.Group(); scene.add(siteGroup);
+
+const WMAT = [M.wall, M.parapet, M.coping, M.inner];
+for (const [pts, z0, z1, m] of D.pieces) put(WMAT[m], prism(pts, z0 + FFL, z1 + FFL));
+for (const [pts, z0, z1] of D.bands) put(M.band, prism(pts, z0 + FFL, z1 + FFL));
+for (const [pts, z0, z1, kind] of D.panels) put(kind === 'brick' ? M.brick : M.sage, prism(pts, z0 + FFL, z1 + FFL));
+flush(building);
+
+// floor slabs (raised plinth)
+for (const k of Object.keys(D.floor)) {
+  const g = prism(D.floor[k], 0, FFL);
+  const mesh = new THREE.Mesh(g, [M.tile, M.plinth]);
+  mesh.receiveShadow = true; mesh.castShadow = true;
+  building.add(mesh);
+}
+
+// openings
+for (const o of D.openings) {
+  const w = o.a1 - o.a0, am = (o.a0 + o.a1) / 2, t = o.c1 - o.c0, cm = (o.c0 + o.c1) / 2;
+  const phi = o.ax === 'x' ? Math.atan(o.sl || 0) : Math.PI / 2;
+  const at = (along, cross) => o.ax === 'x'
+    ? [am + along * Math.cos(phi), cm + cross + along * Math.sin(phi)]
+    : [cm + cross, am + along];
+  // local box: length along wall, height, thickness across wall
+  const B = (mat, len, h, thick, along, cross, zc) => {
+    const [x, y] = at(along, cross);
+    put(mat, obox(len, h, thick, x, y, zc + FFL, o.ax === 'x' ? phi : -Math.PI / 2));
+  };
+  const out = o.out;
+  if (o.k === 'win') {
+    const h = o.z1 - o.z0, zc = (o.z0 + o.z1) / 2;
+    B(M.glass, w, h, 0.02, 0, 0, zc);
+    B(M.frame, w, 0.05, 0.08, 0, 0, o.z1 - 0.025);
+    B(M.frame, w, 0.05, 0.08, 0, 0, o.z0 + 0.025);
+    B(M.frame, 0.05, h, 0.08, -w / 2 + 0.025, 0, zc);
+    B(M.frame, 0.05, h, 0.08, w / 2 - 0.025, 0, zc);
+    if (w >= 0.9) B(M.frame, 0.04, h, 0.06, 0, 0, zc);
+    if (o.ext) {
+      const off = out * (t / 2 - 0.035);
+      const n = Math.max(2, Math.round(w / 0.13));
+      for (let i = 1; i < n; i++) B(M.bars, 0.018, h - 0.02, 0.018, -w / 2 + (i * w) / n, off, zc);
+      B(M.bars, w, 0.03, 0.012, 0, off, o.z0 + h / 3);
+      B(M.bars, w, 0.03, 0.012, 0, off, o.z0 + 2 * h / 3);
+      B(M.concrete, w + 0.12, 0.05, 0.1, 0, out * (t / 2 + 0.03), o.z0 - 0.025);
+      const tr = out * (t / 2 + 0.045);
+      B(M.band, w + 0.24, 0.12, 0.05, 0, tr, o.z1 + 0.06);
+      B(M.band, 0.12, h + 0.12, 0.05, -w / 2 - 0.06, tr, (o.z0 + o.z1) / 2 + 0.06);
+      B(M.band, 0.12, h + 0.12, 0.05, w / 2 + 0.06, tr, (o.z0 + o.z1) / 2 + 0.06);
+    }
+  } else {
+    const h = 2.1;
+    const isToilet = w <= 0.75;
+    const isReception = o.ax === 'y' && o.ext && Math.abs(cm - (S.court.x1 + 0.1125)) < 0.3;
+    let mat = isToilet ? M.pvc : (o.ext ? M.mahog : M.wood);
+    const leaves = o.d ? [[-w / 4, w / 2 - 0.015], [w / 4, w / 2 - 0.015]] : [[0, w - 0.02]];
+    for (const [al, lw] of leaves) {
+      if (isReception) {
+        B(M.glass, lw - 0.08, h - 0.08, 0.02, al, 0, h / 2);
+        B(M.steel, lw, 0.05, 0.05, al, 0, h - 0.025); B(M.steel, lw, 0.06, 0.05, al, 0, 0.03);
+        B(M.steel, 0.05, h, 0.05, al - lw / 2 + 0.025, 0, h / 2); B(M.steel, 0.05, h, 0.05, al + lw / 2 - 0.025, 0, h / 2);
+      } else {
+        B(mat, lw, h, 0.045, al, 0, h / 2);
+        if (o.ext) {
+          B(M.coping, lw - 0.16, h * 0.36, 0.055, al, 0, h * 0.72);
+          B(M.coping, lw - 0.16, h * 0.36, 0.055, al, 0, h * 0.3);
+        }
+        B(M.frame, 0.03, 0.18, 0.08, al + (o.d ? (al < 0 ? lw / 2 - 0.06 : -lw / 2 + 0.06) : lw / 2 - 0.08), 0, 1.05);
+      }
+    }
+    // fanlight louvre over corridor-side room doors
+    if (!o.ext && !isToilet && t < 0.2 && w > 0.85) B(M.louvre, w, 0.28, t + 0.02, 0, 0, 2.27);
+    // steps outside external doors
+    if (o.ext) {
+      B(M.concrete, w + 0.6, FFL / 3, 0.95, 0, out * (t / 2 + 0.475), -FFL + FFL / 6);
+      B(M.concrete, w + 0.6, (2 * FFL) / 3, 0.62, 0, out * (t / 2 + 0.31), -FFL + FFL / 3);
+      B(M.concrete, w + 0.6, FFL - 0.001, 0.3, 0, out * (t / 2 + 0.15), -FFL / 2);
+    }
+  }
+}
+flush(building);
+
+// furniture
+for (const [kind, g, z0, z1] of D.furniture) {
+  const mat = FUR[kind] || FUR.wood;
+  if (g.length === 3 && typeof g[0] === 'number') {
+    const c = new THREE.CylinderGeometry(g[2], g[2], z1 - z0, 18);
+    c.translate(g[0], FFL + (z0 + z1) / 2, -g[1]);
+    put(mat, c);
+  } else put(mat, prism(g, FFL + z0, FFL + z1));
+}
+flush(building, { cast: false, receive: true });
+
+// ---------------- hip roofs (stone-coated tiles) over a white cornice band ----------------
+// Exact hip roof for a convex outline: each eave edge owns the region where it is the nearest edge.
+function ccw(poly) {
+  let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; }
+  return a < 0 ? poly.slice().reverse() : poly;
+}
+function offsetPoly(poly, g) {
+  poly = ccw(poly);
+  const n = poly.length, lines = [];
+  for (let i = 0; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy);
+    const nx = dy / L, ny = -dx / L;          // outward normal for CCW
+    lines.push([p[0] + nx * g, p[1] + ny * g, dx, dy]);
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const [x1, y1, dx1, dy1] = lines[(i + n - 1) % n], [x2, y2, dx2, dy2] = lines[i];
+    const den = dx1 * dy2 - dy1 * dx2;
+    const t = ((x2 - x1) * dy2 - (y2 - y1) * dx2) / den;
+    out.push([x1 + dx1 * t, y1 + dy1 * t]);
+  }
+  return out;
+}
+function hipRoof(poly, ze, slope, mat, group) {
+  poly = ccw(poly);
+  const n = poly.length, E = [];
+  for (let i = 0; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy);
+    E.push({ p, ux: dx / L, uy: dy / L, nx: -dy / L, ny: dx / L });   // inward normal
+  }
+  const d = (e, pt) => (pt[0] - e.p[0]) * e.nx + (pt[1] - e.p[1]) * e.ny;
+  const clip = (pts, f) => {
+    const res = [];
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[k], b = pts[(k + 1) % pts.length], fa = f(a), fb = f(b);
+      if (fa <= 1e-9) res.push(a);
+      if ((fa < -1e-9 && fb > 1e-9) || (fa > 1e-9 && fb < -1e-9)) {
+        const t = fa / (fa - fb); res.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    return res;
+  };
+  const pos = [], uv = [], k = Math.sqrt(1 + slope * slope);
+  E.forEach((e, i) => {
+    let reg = poly.slice();
+    E.forEach((f, j) => { if (j !== i && reg.length) reg = clip(reg, pt => d(e, pt) - d(f, pt)); });
+    if (reg.length < 3) return;
+    const V = pt => {
+      const h = d(e, pt);
+      pos.push(pt[0], ze + h * slope, -pt[1]);
+      uv.push((pt[0] * e.ux + pt[1] * e.uy) / 1.4, (h * k) / 1.4);
+    };
+    for (let t = 1; t < reg.length - 1; t++) { V(reg[0]); V(reg[t]); V(reg[t + 1]); }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true;
+  group.add(m);
+  // fascia board edge under the tiles
+  return m;
+}
+const ROOF_SLOPE = 0.95, EAVE = FFL + 4.18, OVER = 0.6;
+{
+  const bx0 = S.BX0, bx1 = S.BX0 + S.BL, by0 = S.BY0, c = S.court;
+  const rn = D.roof.n;
+  const south = [[bx0, by0], [bx1, by0], [bx1, c.y0], [bx0, c.y0]];
+  const north = [[bx0, c.y1], [bx1, c.y1], [bx1, rn.ye1 + 0.225], [rn.xs, rn.ye0 + 0.225], [bx0, rn.ye0 + 0.225]];
+  hipRoof(offsetPoly(south, OVER), EAVE, ROOF_SLOPE, M.roof, roofGroup);
+  hipRoof(offsetPoly(north, OVER), EAVE, ROOF_SLOPE, M.roof, roofGroup);
+  // east arm over reception: ridge runs north-south and joins both wing roofs (U-shaped hip roof).
+  // Its outer eaves sit 1 cm further out than the wings', so the shared slopes never flicker.
+  const nTop = x => x <= rn.xs ? rn.ye0 + 0.225 : rn.ye0 + 0.225 + (rn.ye1 - rn.ye0) * (x - rn.xs) / (rn.x1 - rn.xs);
+  const east = [[c.x1, by0], [bx1, by0], [bx1, nTop(bx1)], [c.x1, nTop(c.x1)]];
+  const eo = offsetPoly(east, OVER + 0.01);
+  const wx = c.x1 - OVER;                       // courtyard-side eave
+  eo[0][0] = Math.max(eo[0][0], wx); eo[3][0] = Math.max(eo[3][0], wx);
+  hipRoof(ccw(eo), EAVE, ROOF_SLOPE, M.roof, roofGroup);
+}
+
+// ---------------- site ----------------
+const PL = S.PL, PW = S.PW, N = S.NARROW, XSF = S.XSF;
+const fencePoly = [[0, 0], [PL, 0], [PL, PW - N], [XSF, PW], [0, PW]];
+function flat(pts, mat, z) {
+  const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]);
+  pts.slice(1).forEach(p => sh.lineTo(p[0], p[1]));
+  const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, z, 0);
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; siteGroup.add(m); return m;
+}
+flat([[-200, -200], [260, -200], [260, 220], [-200, 220]], M.earth, -0.03);
+flat([[-11, -200], [-3.2, -200], [-3.2, 220], [-11, 220]], M.asphalt, -0.01);
+flat([[-3.2, -200], [-0.12, -200], [-0.12, 220], [-3.2, 220]], M.concrete, 0.0);
+flat(fencePoly, M.paving, 0.01);
+const c = S.court;
+flat([[c.x0, c.y0], [c.x1, c.y0], [c.x1, c.y1], [c.x0, c.y1]], M.grass, 0.02);
+flat([[c.x0, c.y0 + 1.95], [c.x1, c.y0 + 1.95], [c.x1, c.y0 + 3.55], [c.x0, c.y0 + 3.55]], M.paving, 0.03);
+// road markings
+for (let y = -190; y < 210; y += 6) put(M.paint, obox(0.15, 0.01, 3, -7.1, y, 0.0, 0));
+// parking lines, wheel stops
+for (const yy of [1.8, 4.2, 6.6, 9.0, 11.0, 13.4, 15.8, 18.2]) put(M.paint, obox(4.8, 0.012, 0.09, 6.6, yy, 0.016));
+for (const [y0, y1] of S.bays) put(M.yellow, obox(0.16, 0.12, (y1 - y0) - 1.0, 8.68, (y0 + y1) / 2, 0.07));
+// apron + pedestrian path markers
+put(M.concrete, obox(1.0, 0.03, S.BD, 9.5, S.BY0 + S.BD / 2, 0.025));
+
+// fence with piers
+const FH = 2.4;
+function fenceRun(ax, ay, bx, by, piers = true) {
+  const len = Math.hypot(bx - ax, by - ay); if (len < 0.05) return;
+  const phi = Math.atan2(by - ay, bx - ax);
+  const mx = (ax + bx) / 2, my = (ay + by) / 2;
+  put(M.wall, obox(len, FH, 0.225, mx, my, FH / 2, phi));
+  put(M.parapet, obox(len, 0.25, 0.235, mx, my, FH - 0.125, phi));
+  put(M.coping, obox(len + 0.02, 0.06, 0.3, mx, my, FH + 0.03, phi));
+  put(M.plinth, obox(len, 0.35, 0.24, mx, my, 0.175, phi));
+  if (piers) {
+    const n = Math.max(1, Math.round(len / 3.2));
+    for (let i = 0; i <= n; i++) {
+      const x = ax + (bx - ax) * i / n, y = ay + (by - ay) * i / n;
+      put(M.brick, obox(0.42, FH + 0.25, 0.42, x, y, (FH + 0.25) / 2, phi));
+      put(M.coping, obox(0.5, 0.08, 0.5, x, y, FH + 0.29, phi));
+    }
+  }
+}
+fenceRun(0, 0, PL, 0); fenceRun(PL, 0, PL, PW - N); fenceRun(PL, PW - N, XSF, PW); fenceRun(XSF, PW, 0, PW);
+const [g0, g1] = S.gate, [p0, p1] = S.ped;
+fenceRun(0, 0, 0, g0); fenceRun(0, g1, 0, p0, false); fenceRun(0, p1, 0, PW);
+for (const y of [g0, g1, p0, p1]) {
+  put(M.brick, obox(0.6, 2.95, 0.6, 0, y + (y === g0 || y === p0 ? -0.18 : 0.18), 1.475));
+  put(M.coping, obox(0.72, 0.1, 0.72, 0, y + (y === g0 || y === p0 ? -0.18 : 0.18), 3.0));
+}
+// steel gates (closed)
+function steelGate(y0, y1, x) {
+  const len = y1 - y0, ym = (y0 + y1) / 2, phi = Math.PI / 2;
+  put(M.steel, obox(len, 0.95, 0.05, x, ym, 0.6, phi));
+  put(M.steel, obox(len, 0.06, 0.07, x, ym, 1.1, phi));
+  put(M.steel, obox(len, 0.06, 0.07, x, ym, 2.25, phi));
+  put(M.steel, obox(0.07, 2.2, 0.07, x, y0 + 0.04, 1.15, phi));
+  put(M.steel, obox(0.07, 2.2, 0.07, x, y1 - 0.04, 1.15, phi));
+  for (let y = y0 + 0.12; y < y1 - 0.06; y += 0.12) {
+    put(M.steel, obox(0.02, 1.15, 0.02, x, y, 1.67, phi));
+    put(M.steel, obox(0.035, 0.12, 0.035, x, y, 2.33, phi));
+  }
+  put(M.steel, obox(len, 0.05, 0.08, x, ym, 0.05, phi));
+}
+steelGate(g0, g1, 0.12); steelGate(p0, p1, 0.0);
+
+// small buildings: gatehouse (security + generator) and convenience
+function smallBlock([x0, y0, x1, y1], H) {
+  const pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const grow = g => [[x0 - g, y0 - g], [x1 + g, y0 - g], [x1 + g, y1 + g], [x0 - g, y1 + g]];
+  put(M.plinth, prism(pts, 0, 0.3));
+  put(M.wall, prism(pts, 0.3, H));
+  put(M.band, prism(grow(0.1), H, H + 0.08));
+  put(M.band, prism(grow(0.06), H + 0.08, H + 0.48));
+  put(M.band, prism(grow(0.16), H + 0.48, H + 0.55));
+  put(M.band, prism(grow(0.26), H + 0.55, H + 0.62));
+  put(M.band, prism(grow(0.38), H + 0.62, H + 0.78));
+  hipRoof(grow(0.42), H + 0.78, ROOF_SLOPE, M.roof, roofGroup);
+}
+const gh = S.gh, cv = S.conv;
+smallBlock(gh, 3.0);
+put(M.mahog, obox(0.8, 2.1, 0.05, 0.9, gh[1] - 0.02, 1.35));
+put(M.louvre, obox(0.58, 2.1, 0.05, 2.81, gh[1] - 0.02, 1.35));
+put(M.louvre, obox(0.58, 2.1, 0.05, 3.39, gh[1] - 0.02, 1.35));
+put(M.glass, obox(0.55, 0.9, 0.04, 1.75, gh[1] - 0.02, 1.75));
+put(M.frame, obox(0.62, 0.05, 0.08, 1.75, gh[1] - 0.03, 2.2)); put(M.frame, obox(0.62, 0.05, 0.08, 1.75, gh[1] - 0.03, 1.3));
+put(M.glass, obox(0.04, 0.9, 1.0, gh[2] + 0.02, (gh[1] + gh[3]) / 2, 1.75));
+smallBlock(cv, 2.7);
+put(M.pvc, obox(0.7, 2.0, 0.05, 0.9, cv[3] + 0.02, 1.3));
+put(M.pvc, obox(0.7, 2.0, 0.05, 2.2, cv[3] + 0.02, 1.3));
+flush(siteGroup);
+
+// ---------------- signage ----------------
+async function signTexture(text, w, h, bg, fg) {
+  try { await document.fonts.load(`700 ${Math.round(h * 0.62)}px "Barlow Semi Condensed"`); } catch (e) {}
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  g.strokeStyle = fg; g.lineWidth = h * 0.04; g.strokeRect(h * 0.08, h * 0.08, w - h * 0.16, h - h * 0.16);
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `700 ${Math.round(h * 0.6)}px "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif`;
+  if ('letterSpacing' in g) g.letterSpacing = `${Math.round(h * 0.08)}px`;
+  g.fillText(text, w / 2, h / 2 + h * 0.03);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+async function sign(text, x, y, zc, len, h, facing) {
+  const tex = await signTexture(text, 1024, Math.round(1024 * h / len), '#2f231b', '#e3b866');
+  const face = std('#ffffff', 0.5, 0.1, { map: tex });
+  const edge = std('#2f231b', 0.6);
+  const mats = [edge, face, edge, edge, edge, edge];   // -x face carries the text
+  const g = new THREE.BoxGeometry(0.06, h, len);
+  const m = new THREE.Mesh(g, mats);
+  m.position.set(x, zc, -y);
+  if (facing === 'south') m.rotation.y = Math.PI / 2;
+  m.castShadow = true;
+  scene.add(m);
+}
+sign('TOCHI HOTEL', S.BX0 - 0.135, S.BY0 + 2.95, FFL + 3.49, 4.2, 0.56);
+sign('RECEPTION', c.x1 - 0.04, c.y0 + 1.42, FFL + 2.48, 1.7, 0.32);
+
+// ---------------- cars ----------------
+// soft contact shadow under each car
+const blobTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false });
+const carMats = {
+  glass: new THREE.MeshPhysicalMaterial({ color: '#0b0f13', roughness: 0.12, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.55 }),
+  trim: std('#1b1c1e', 0.6, 0.2),
+  tyre: std('#131313', 0.92),
+  rim: std('#c3c7cc', 0.25, 0.9, { envMapIntensity: 1.3 }),
+  hub: std('#5a5e63', 0.4, 0.7),
+  chrome: std('#d9dde1', 0.15, 1.0, { envMapIntensity: 1.5 }),
+  lampW: std('#f7f5ea', 0.1, 0.2, { emissive: '#fff6d8', emissiveIntensity: 0.35 }),
+  lampR: std('#a3151a', 0.2, 0.1, { emissive: '#600a0d', emissiveIntensity: 0.5 }),
+  plate: std('#f4f4f0', 0.6),
+};
+function car(color, kind) {
+  const grp = new THREE.Group();
+  const paint = new THREE.MeshPhysicalMaterial({ color, roughness: 0.38, metalness: 0.45, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 1.1 });
+  const suv = kind === 'suv';
+  const W = suv ? 1.84 : 1.76;                  // body width
+  const R = suv ? 0.38 : 0.33;                  // wheel radius
+  const AR = R + 0.07;                          // arch radius
+  const WB = suv ? 1.42 : 1.36;                 // half wheelbase
+  const yb = suv ? 0.36 : 0.28;                 // sill height
+  const len = suv ? 2.36 : 2.32;                // half length
+  const add = (geo, mat, x = 0, y = 0, z = 0, cast = true) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast; grp.add(m); return m;
+  };
+  const extrude = (sh, w, mat, bevel = 0.05) => {
+    const g = new THREE.ExtrudeGeometry(sh, { depth: w - 2 * bevel, bevelEnabled: true, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 14 });
+    g.translate(0, 0, -(w - 2 * bevel) / 2);
+    return add(g, mat);
+  };
+  // body side profile with wheel arches cut out
+  const b = new THREE.Shape();
+  const top = suv ? 1.08 : 0.9, hood = suv ? 1.02 : 0.82;
+  b.moveTo(-len, yb);
+  b.lineTo(-WB - AR, yb);
+  b.absarc(-WB, R, AR, Math.PI, 0, true);
+  b.lineTo(WB - AR, yb);
+  b.absarc(WB, R, AR, Math.PI, 0, true);
+  b.lineTo(len, yb);
+  b.lineTo(len + 0.03, yb + 0.25);
+  b.quadraticCurveTo(len + 0.05, hood, len - 0.25, hood + 0.02);
+  b.lineTo(suv ? 1.55 : 1.2, top);
+  b.lineTo(suv ? -2.05 : -1.65, top);
+  b.lineTo(-len + 0.12, top - 0.05);
+  b.quadraticCurveTo(-len - 0.04, top - 0.12, -len - 0.02, yb + 0.25);
+  b.lineTo(-len, yb);
+  extrude(b, W, paint, 0.06);
+  // greenhouse (glass) and roof
+  const g = new THREE.Shape();
+  if (suv) {
+    g.moveTo(-2.05, top - 0.02); g.lineTo(-1.98, 1.64); g.lineTo(0.95, 1.66); g.lineTo(1.55, top - 0.02);
+  } else {
+    g.moveTo(-1.62, top - 0.02); g.quadraticCurveTo(-1.25, 1.3, -0.95, 1.37); g.lineTo(0.5, 1.4); g.quadraticCurveTo(0.85, 1.32, 1.22, top - 0.02);
+  }
+  extrude(g, W - 0.22, carMats.glass, 0.03);
+  const roofLen = suv ? 2.9 : 1.42, roofX = suv ? -0.5 : -0.22, roofY = suv ? 1.66 : 1.39;
+  add(new THREE.BoxGeometry(roofLen, 0.06, W - 0.2), paint, roofX, roofY + 0.02, 0);
+  // pillars dividing the side glass
+  add(new THREE.BoxGeometry(0.09, roofY - top + 0.02, W - 0.18), paint, suv ? -0.35 : -0.25, (top + roofY) / 2, 0);
+  if (suv) {
+    add(new THREE.BoxGeometry(0.09, roofY - top, W - 0.18), paint, -1.3, (top + roofY) / 2, 0);
+    for (const z of [-0.62, 0.62]) add(new THREE.BoxGeometry(2.3, 0.04, 0.05), carMats.chrome, -0.45, roofY + 0.08, z);
+  }
+  // bumpers, grille, lamps, plates, mirrors, handles
+  add(new THREE.BoxGeometry(0.14, 0.2, W + 0.02), carMats.trim, len + 0.02, yb + 0.1, 0);
+  add(new THREE.BoxGeometry(0.14, 0.2, W + 0.02), carMats.trim, -len - 0.02, yb + 0.1, 0);
+  add(new THREE.BoxGeometry(0.04, suv ? 0.3 : 0.18, 0.86), carMats.trim, len + 0.04, hood - (suv ? 0.28 : 0.2), 0);
+  add(new THREE.BoxGeometry(0.03, 0.025, 0.86), carMats.chrome, len + 0.06, hood - 0.1, 0);
+  for (const z of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.05, 0.1, 0.36), carMats.lampW, len + 0.02, hood - 0.13, z * (W / 2 - 0.25));
+    add(new THREE.BoxGeometry(0.05, 0.11, 0.42), carMats.lampR, -len - 0.02, top - 0.17, z * (W / 2 - 0.27));
+    add(new THREE.BoxGeometry(0.16, 0.1, 0.06), paint, suv ? 1.45 : 1.1, top + 0.08, z * (W / 2 + 0.06));
+    for (const x of [-0.75, 0.35]) add(new THREE.BoxGeometry(0.16, 0.03, 0.02), carMats.chrome, x + (suv ? -0.1 : 0), top - 0.12, z * (W / 2 + 0.005), false);
+    // side skirt / door seam
+    add(new THREE.BoxGeometry(0.012, top - yb - 0.12, 0.012), carMats.trim, suv ? -0.35 : -0.25, (top + yb) / 2, z * (W / 2 + 0.002), false);
+  }
+  add(new THREE.BoxGeometry(0.02, 0.12, 0.5), carMats.plate, len + 0.1, yb + 0.12, 0, false);
+  add(new THREE.BoxGeometry(0.02, 0.12, 0.5), carMats.plate, -len - 0.1, yb + 0.28, 0, false);
+  // wheels: tyre, alloy rim with spokes, hub
+  for (const sx of [-WB, WB]) for (const sz of [-1, 1]) {
+    const zc = sz * (W / 2 - 0.13);
+    const t = add(new THREE.CylinderGeometry(R, R, 0.24, 28), carMats.tyre, sx, R, zc); t.rotation.x = Math.PI / 2;
+    const rim = add(new THREE.CylinderGeometry(R * 0.66, R * 0.66, 0.245, 24), carMats.rim, sx, R, zc, false); rim.rotation.x = Math.PI / 2;
+    const face = zc + sz * 0.125;
+    for (let k = 0; k < 5; k++) {
+      const sp = add(new THREE.BoxGeometry(R * 1.1, 0.05, 0.02), carMats.hub, sx, R, face, false);
+      sp.rotation.z = (k * Math.PI * 2) / 5;
+    }
+    const hub = add(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 12), carMats.chrome, sx, R, face, false); hub.rotation.x = Math.PI / 2;
+  }
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(len * 2 + 0.9, W + 0.9), blobMat);
+  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; grp.add(blob);
+  return grp;
+}
+const parked = [[0, '#b8bcc2', 'sedan'], [1, '#1d1f24', 'suv'], [3, '#f2f2ef', 'sedan'], [4, '#1f3557', 'suv'], [5, '#8e1c1c', 'sedan']];
+for (const [i, col, kind] of parked) {
+  const [y0, y1] = S.bays[i];
+  const cc = car(col, kind);
+  cc.position.set(6.2, 0.02, -(y0 + y1) / 2);
+  carGroup.add(cc);
+}
+// one car in the driveway, as if arriving
+{
+  const cc = car('#6d7680', 'sedan');
+  cc.rotation.y = Math.PI / 2; cc.position.set(2.05, 0.02, -6.0);
+  carGroup.add(cc);
+}
+
+// ---------------- views ----------------
+const VIEWS = {
+  aerial: { p: V3(-20, -24, 30), t: V3(30, 9, 0) },
+  front: { p: V3(0.9, 10.7, 1.7), t: V3(10, 5.0, 2.9) },
+  court: { p: V3(11.2, 10.05, 1.65), t: V3(46, 10.05, 2.2) },
+  rear: { p: V3(78, 34, 20), t: V3(36, 10, 0) },
+  plan: { p: V3(33, 9.95, 58), t: V3(33, 10.2, 0) },
+};
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let tween = null;
+function goTo(name) {
+  const v = VIEWS[name];
+  document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  if (name === 'plan') setRoof(false);
+  if (reduce) { camera.position.copy(v.p); controls.target.copy(v.t); controls.update(); return; }
+  tween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: v.p.clone(), t1: v.t.clone(), s: performance.now(), d: 1300 };
+}
+function setRoof(on) {
+  roofGroup.visible = on;
+  document.getElementById('roofBtn').setAttribute('aria-pressed', String(on));
+}
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => goTo(b.dataset.view)));
+document.getElementById('roofBtn').addEventListener('click', () => setRoof(!roofGroup.visible));
+document.getElementById('carBtn').addEventListener('click', e => {
+  carGroup.visible = !carGroup.visible; e.currentTarget.setAttribute('aria-pressed', String(carGroup.visible));
+});
+const panel = document.getElementById('panel'), more = document.getElementById('more');
+more.addEventListener('click', () => { const o = panel.classList.toggle('open'); more.setAttribute('aria-expanded', String(o)); more.textContent = o ? 'Less' : 'Info'; });
+controls.addEventListener('start', () => { tween = null; });
+
+camera.position.copy(VIEWS.aerial.p); controls.target.copy(VIEWS.aerial.t); controls.update();
+// on narrow screens start a little further out
+if (stage.clientWidth < 640) { camera.position.copy(V3(-30, -38, 44)); controls.update(); }
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+renderer.setAnimationLoop(now => {
+  if (tween) {
+    const k = Math.min(1, (now - tween.s) / tween.d), e = ease(k);
+    camera.position.lerpVectors(tween.p0, tween.p1, e);
+    controls.target.lerpVectors(tween.t0, tween.t1, e);
+    if (k >= 1) tween = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+});
+statusEl.hidden = true;
+window.__hotel = { renderer, camera, controls, scene, VIEWS, setRoof };
+window.__ready = true;
+} catch (err) {
+  statusEl.textContent = 'The 3D model could not load in this browser (WebGL is needed). ' + (err && err.message ? err.message : '');
+  console.error(err);
+}
+</script>
